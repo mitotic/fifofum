@@ -1,0 +1,11 @@
+.DS_Store
+*~
+*.pyc
+*.prev
+*.sav
+*.old
+build/*
+dist/*
+local/*
+BAK
+IGNORE
