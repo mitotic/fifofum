@@ -905,7 +905,7 @@ int main ()
 #ifdef TEST_GRAPHTERM
     pipe_num = allocate_file_pipe(pipefile, GRAPHTERM_ENC, 1);
 #else
-    pipe_num = allocate_file_pipe(pipefile);
+    pipe_num = allocate_file_pipe(pipefile, DATA_URL_ENC, 1);
 #endif
 
     if (pipe_num >= 0) {

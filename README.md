@@ -33,7 +33,7 @@ and then displayed in the browser.
 ## Usage example
 
 
-Sample Fortran code snippet (see `src/fifo_test.F90`)
+Sample Fortran code snippet (see `test/test_animate.F90`)
 
 ```FORTRAN
     real :: data_values(width, height)
@@ -41,7 +41,8 @@ Sample Fortran code snippet (see `src/fifo_test.F90`)
     do
 	    ! ... compute data values
         status = fifo_plot2d(pipe_num, data_values, label="Data")
-    end do
+	end do
+    call free_pipe(pipe_num)
 ```
 	
 Compile, link, and run using `gcc/gfortran`
@@ -49,8 +50,8 @@ Compile, link, and run using `gcc/gfortran`
 ```sh
 gcc -c fifo_c.c
 gfortran -c -fdefault-real-8 fifo_f.f90
-gfortran -o fifo_test -fdefault-real-8 fifo_test.F90 fifo_f.o fifo_c.o -lpng
-./fifo_test &
+gfortran -o test_animate -fdefault-real-8 test_animate.F90 fifo_f.o fifo_c.o -lpng
+./test_animate &
 ```
 
 Run web server to display output and capture input.
@@ -72,7 +73,7 @@ Try the command `make test_with_background` for a fancier animation.
 
 For more information, see:
 
- - Test program `src/fifo_test.F90`
+ - Test program `test/test_animate.F90`
 
  - Comments at the top of `src/fifo_f.f90` and `src/fifofum.py`
 
@@ -80,7 +81,7 @@ For more information, see:
 
  - `python fifofum.py --help`
 
-- `Makefile`
+- `test/Makefile`
 
 
 
