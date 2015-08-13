@@ -343,15 +343,18 @@ contains
   !                 3 => grayalpha (transparent black->opaque white)
   ! (Negative colormap codes reverse the corresponding colormap)
   ! opacity ranges from 0.0 (transparent) to 1.0 (opaque)
-  ! undef_value and undef_color can be used to shade undefined values (omit both if all values are defined).
-  ! Set undef_color to -1, if no undefined values.
+  ! min_value:max_value spans the full color table. If omitted, they are determined from the data.
+  ! undef_value and undef_color can be used to shade undefined values.
+  ! If undef_value is specified without undef_color, a default undef_color of 0 is used.
   ! If transp_color >= 0, that particular color index is made transparent (ignored for grayalpha colormap).
-  ! Set transp_color to -1, if not used.
   ! undef_color/transp_color can be a basic color (0-15), or a color in the colormap (16-255).
+  ! If transp_color or undef_color is specified, it will also be used for out-of-range plot values.
   ! colors is an optional colormap array (as in encode_image)
+  !
   ! Basic colors 0-7:   Black,  White,     Red,  Lime Green,  Blue,  Cyan,  Magenta,  Yellow
   ! basic colors 8-15: Silver,   Gray,  Maroon,  Dark Green,  Navy,  Teal,   Purple,   Olive
-  function fifo_plot2d(pipe_num, field, label, colormap_code, opacity, undef_value, undef_color, transp_color, colors)
+  function fifo_plot2d(pipe_num, field, label, colormap_code, opacity, min_value, max_value, &
+                       undef_value, undef_color, transp_color, colors)
       use iso_c_binding
       implicit none
       integer fifo_plot2d
@@ -359,25 +362,32 @@ contains
       real, intent(in) :: field(1:,1:)
       character(len=*), OPTIONAL, intent(in) :: label
       integer(c_int), OPTIONAL, intent(in) :: colormap_code
-      real, OPTIONAL, intent(in) :: opacity, undef_value
+      real, OPTIONAL, intent(in) :: opacity,  min_value, max_value, undef_value
       integer, OPTIONAL, intent(in) :: undef_color, transp_color
       integer(c_int), OPTIONAL, intent(in) :: colors(1:,1:)
 
       integer, parameter :: BASIC_COLORS=16, MAX_COLORS=256
 
-      integer :: tem_colormap_code=0, tem_undef_color=-1, tem_transp_color=-1
-      real :: tem_opacity = 1.0
       integer :: colormap(3,MAX_COLORS), reverse=0, n_colors=MAX_COLORS-BASIC_COLORS
       integer :: alphas(256), n_alphas=0
       character, dimension(size(field,1), size(field,2)) :: field_pixels
-      character(len=81) :: line_buf
-      real :: field_min, field_max, field_scale
+      character(len=81) :: line_buf, line_buf2
+      real :: field_min, field_max, plot_min, plot_max, plot_scale
       integer :: status, field_sec, i, igray
+
+      integer :: tem_colormap_code=0, tem_undef_color=0, tem_transp_color=-1, out_of_range_color=-1
+      real :: tem_opacity = 1.0
 
       if (present(colormap_code)) tem_colormap_code = max(-3,min(3,colormap_code))
       if (present(opacity)) tem_opacity = max(0.0,min(1.0,opacity))
-      if (present(undef_color)) tem_undef_color = max(-1,min(255,undef_color))
+      if (present(undef_color)) tem_undef_color = max(0,min(255,undef_color))
       if (present(transp_color)) tem_transp_color = max(-1,min(255,transp_color))
+
+      if (tem_transp_color >= 0) then
+         out_of_range_color = tem_transp_color
+      else if (present(undef_color) .or. present(undef_value)) then
+         out_of_range_color = tem_undef_color
+      end if
 
       if (tem_colormap_code == 0) tem_colormap_code = 1
 
@@ -387,7 +397,7 @@ contains
       end if
 
       if (tem_colormap_code >= 2) then
-         ! Grayscale/transparent grayscale colormap
+         ! Grayscale/transparent-grayscale colormap
          do i=1,BASIC_COLORS
             colormap(:,i) = VIRIDIS_PLUS_CMAP(:,i)
          end do
@@ -415,35 +425,69 @@ contains
          n_alphas = MAX_COLORS
          alphas(1:BASIC_COLORS) = 255
          alphas(BASIC_COLORS+1:MAX_COLORS) = 255*tem_opacity
-         if (tem_transp_color >= 0) alphas(transp_color+1) = 0
+         if (tem_transp_color >= 0) alphas(tem_transp_color+1) = 0
       else
          n_alphas = 0
       end if
 
       ! find max/min of field and scale it
-      field_scale = 1.0
-
-      if (present(undef_value) .and. tem_undef_color >= 0) then
+      if (present(undef_value)) then
           if (count(field /= undef_value) == 0) then
-              field_min = 0
-              field_max = 0
+              field_min = undef_value
+              field_max = undef_value
           else
               field_min = minval(field, mask=(field /= undef_value))
               field_max = maxval(field, mask=(field /= undef_value))
           endif
-          if (field_max > field_min) field_scale = (n_colors - 1) / (field_max - field_min)
-          where(field /= undef_value) field_pixels = char( BASIC_COLORS + nint( (field - field_min) * field_scale) )
-          where(field == undef_value) field_pixels = char(tem_undef_color)
       else
           field_min = minval(field)
           field_max = maxval(field)
-          if (field_max > field_min) field_scale = (n_colors - 1) / (field_max - field_min)
-          field_pixels = char( BASIC_COLORS + nint( (field - field_min) * field_scale) )
+      endif
+
+      if (present(min_value)) then
+         plot_min = min_value
+      else
+         plot_min = field_min
+      endif
+
+      if (present(max_value)) then
+         plot_max = max_value
+      else
+         plot_max = field_max
+      endif
+
+      if (plot_max > plot_min) then
+         plot_scale = (n_colors - 1) / (plot_max - plot_min)
+      else
+         plot_scale = 1.0
+      end if
+
+      if (present(undef_value)) then
+          where(field == undef_value)
+             field_pixels = char(tem_undef_color)
+          elsewhere(field < plot_min .or. field > plot_max)
+             field_pixels = char(out_of_range_color)
+          elsewhere
+             field_pixels = char( BASIC_COLORS + max(0,min(255,nint( (field - plot_min) * plot_scale))) )
+          endwhere
+      else if (out_of_range_color >= 0) then
+          where(field < plot_min .or. field > plot_max)
+             field_pixels = char(out_of_range_color)
+          elsewhere
+             field_pixels = char( BASIC_COLORS + max(0,min(255,nint( (field - plot_min) * plot_scale))) )
+          endwhere
+      else
+          field_pixels = char( BASIC_COLORS + max(0,min(255,nint( (field - plot_min) * plot_scale))) )
       end if
 
       if (present(label)) then
-          write(line_buf, '(a,g12.5,a,g12.5)') " Max=", field_max, ", Min=", field_min
-          status = write_str_to_pipe(pipe_num, label//trim(line_buf), end_line=1)
+          write(line_buf, '(a,g12.5,a,g12.5)') " Max=", plot_max, ", Min=", plot_min
+          if (present(min_value) .or. present(max_value)) then
+             write(line_buf2, '(a,g12.5,a,g12.5)') ", DataMax=", field_max, ", DataMin=", field_min
+          else
+             line_buf2 = ""
+          end if
+          status = write_str_to_pipe(pipe_num, label//trim(line_buf)//trim(line_buf2), end_line=1)
       end if
 
       if (present(colors)) then
