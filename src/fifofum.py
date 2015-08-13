@@ -93,6 +93,49 @@ Index_html = """
         FIFOsocket.send(msg);
     }
 
+    function raw_to_png(b64data) {
+       /* Converts raw base64 image pixel data to PNG, returning the data URL
+       Raw byte format: width mod 256, width/256, height mod 256, height/256, 256*(r,g,b,a) table, width*height*color_index
+       */
+       var i, j, pixel, color_offset;
+       var raw = window.atob(b64data);
+       var rawLength = raw.length;
+       var rawData = new Uint8Array(new ArrayBuffer(rawLength));
+       for (i = 0; i < rawLength; i++) {
+          rawData[i] = raw.charCodeAt(i);
+       }
+
+       var width = rawData[0] + 256*rawData[1];
+       var height = rawData[2] + 256*rawData[3];
+
+       var cmap_offset = 4;
+       var pixel_offset = cmap_offset + 4*256;
+
+       // console.log("raw_to_png: b64_len, raw_len, expected_raw_len, width, height", b64data.length, rawLength, pixel_offset+width*height, width, height);
+       // console.log("raw_to_png: R,G,B,A,img_0,img_n-1", rawData[cmap_offset], rawData[cmap_offset+1], rawData[cmap_offset+2], rawData[cmap_offset+3], rawData[pixel_offset], rawData[rawLength-1]);
+
+       var canvas = document.createElement("canvas");
+       canvas.width = width;
+       canvas.height = height;
+
+       var ctx = canvas.getContext("2d");
+       var imageData = ctx.getImageData(0, 0,canvas.width, canvas.height);
+       var data = imageData.data;
+
+       for (i = 0; i < rawLength-pixel_offset; i++) {
+          j = i * 4;
+          pixel = rawData[pixel_offset+i];
+          color_offset = cmap_offset+pixel*4;
+          data[j]  =  rawData[color_offset];
+          data[j+1] = rawData[color_offset+1];
+          data[j+2] = rawData[color_offset+2];
+          data[j+3] = rawData[color_offset+3];
+       }
+
+       ctx.putImageData(imageData, 0, 0);
+       return canvas.toDataURL("image/png");
+    }
+    
     var protoPrefix = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
     var FIFOsocket = new WebSocket(protoPrefix + '//' + window.location.host + '/ws');
 
@@ -107,6 +150,8 @@ Index_html = """
                   document.getElementById('inputButton').click();
             }
     };
+
+    var rawImagePrefix = "data:image/x-raw;base64,";
 
     FIFOsocket.onmessage = function(evt){
         var msg = evt.data;  
@@ -127,6 +172,10 @@ Index_html = """
             appendPipeElement(pipeName, "pipeContainer");
 
         if (contentType === "image") {
+           if (content.substr(0,rawImagePrefix.length) === rawImagePrefix) {
+              // Convert raw image to data URL
+              content = raw_to_png(content.substr(rawImagePrefix.length));
+           }
            document.getElementById("img_"+pipeName).src = content;
         } else if (contentType === "text") {
            document.getElementById("pre_"+pipeName).innerHTML = content;
@@ -197,8 +246,9 @@ class PipeReader(object):
 
         fcntl.fcntl(self.fd, fcntl.F_SETFL, fcntl.fcntl(self.fd, fcntl.F_GETFL)|os.O_NONBLOCK) # Non-blocking
 
-        self.line_buffer = ""
+        self.line_buffer = []
         self.channel = ""
+        self.skip_line = True
 
     def on_read(self, fd, events):
         try:
@@ -206,6 +256,7 @@ class PipeReader(object):
         except Exception, excp:
             logging.error("fifofum: on_read: Error in reading from %s: %sd", self.filepath, excp)
             data = ""
+            self.skip_line = True
             time.sleep(1)
     
         while data:
@@ -213,37 +264,45 @@ class PipeReader(object):
             head, sep, data = data.partition("\n")
 
             # Append head to current line
-            self.line_buffer += head
+            self.line_buffer.append(head)
         
             if not sep: # No line break found in data
                 break
 
+            full_line = "".join(self.line_buffer)
+            self.line_buffer = []
+
             # Process line
-            if options.multiplex and self.line_buffer.startswith("channel:"):
+            if full_line.startswith("channel:") and options.multiplex:
                 # Channel switch directive line
-                _, sep, self.channel = self.line_buffer.partition(":")
-                self.line_buffer = ""
+                _, sep, self.channel = full_line.partition(":")
 
                 self.channel = self.channel.strip().replace(":","_").replace(" ","_") # No colons/spaces allowed in channel name
                 ##print "CHANNEL: ", self.channel
                 continue
 
-            if options.passthru and not self.line_buffer.startswith("data:"):
-                if len(Pipes) > 1:
-                    print self.name + ":" + self.line_buffer
-                else:
-                    print self.line_buffer
+            if not full_line.startswith("data:"):
+                # Not channel or data directive
+                if self.skip_line:
+                    # Skip possibly incomplete first line
+                    self.skip_line = False
+                    continue
+
+                if options.passthru:
+                    # Transmit to STDOUT
+                    if len(Pipes) > 1:
+                        print self.name + ":" + full_line
+                    else:
+                        print full_line
             
             if options.multiplex and not self.channel:
                 # Channel must be defined for multiplexed pipes before data is processed (to avoid processing incomplete line blocks)
-                self.line_buffer = ""    # Discard line
-                continue
+                continue   # Discard line
 
             # Transmit buffered line as message pipeName:data_URL or plain text line
             channel_name = self.channel if self.channel else self.name
 
-            msg = channel_name + ":" + self.line_buffer
-            self.line_buffer = ""
+            msg = channel_name + ":" + full_line
 
             ##print "MSG: ", msg
             for ws in Web_sockets:

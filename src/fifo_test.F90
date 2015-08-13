@@ -46,12 +46,6 @@ program fifo_test
   integer :: reverse=1
   integer :: count=0
 
-  ! Simple PNG file
-  read(hello_png_hex, '(88Z2)') hello_data  ! Convert hexadecimal data containing PNG binary to integer array
-  do i=1,hello_bytes
-     hello_str(i:i) = char(hello_data(i))   ! Convert integer array to string containing binary data as characters
-  end do
-
   ! Initialize simple image
   do j=1,height
      img_pixels(:,j) = char(j-1)
@@ -66,6 +60,7 @@ program fifo_test
 
   ngrid = width * height
   max_bytes = ngrid + min_bytes
+
   allocate(outbuf(max_bytes))   ! Image output buffer
 
 #ifdef DEBUG_FIFO
@@ -75,34 +70,45 @@ program fifo_test
 #endif
 
   ! Render simple image to buffer as raw PNG data
-  count = render_png(img_pixels, outbuf, NO_ENC, reverse, img_colors)
+  count = render_image(img_pixels, outbuf, NO_ENC, reverse, img_colors)
 
   if (count .le. 0) then
-     if ( allocated(outbuf) ) deallocate(outbuf)
-     stop 'Error in rendering PNG'
+     call stderr( "fifo_test: Error in rendering PNG")
+  else
+     ! Write test PNG file
+     open(unit=11, file=png_file, status="replace", access="stream")
+     write(11) outbuf(1:count)
+     close(11)
+     call stderr( "fifo_test: Created test PNG file "//png_file )
   endif
+  if ( allocated(outbuf) ) deallocate(outbuf)
 
-  ! Write test PNG file
-  open(unit=11, file=png_file, status="replace", access="stream")
-  write(11) outbuf(1:count)
-  close(11)
-  call stderr( "fifo_test: Created file "//png_file )
+  ! Simple test PNG data
+  read(hello_png_hex, '(88Z2)') hello_data  ! Convert hexadecimal data containing PNG binary to integer array
+  do i=1,hello_bytes
+     hello_str(i:i) = char(hello_data(i))   ! Convert integer array to string containing binary data as characters
+  end do
 
   ! Open input pipe
   call stderr( "fifo_test: Reading from named pipe "//read_file )
   read_fd = open_read_fd(read_file)
 
   call stderr( "fifo_test: Writing to named pipe "//pipe_file )
+
 #ifdef TEST_GRAPHTERM
+  ! Allocate output pipe
   pipe_num = allocate_file_pipe(pipe_file, GRAPHTERM_ENC)
 #else
   ! Allocate output pipe
   pipe_num = allocate_file_pipe(pipe_file)
-  status = write_str_to_pipe(pipe_num, "Wait...", end_line=1)
+
+  ! Write simple PNG file to illustrate how image output from other graphics packages can be transmitted via fifofum
   status = write_str_to_pipe(pipe_num, data_url_prefix)
   status = write_str_to_pipe(pipe_num, hello_str, encoded=1, end_line=1)
+  status = write_str_to_pipe(pipe_num, "Starting...", end_line=1)
   status = c_sleep(5)   ! Sleep for a while
 #endif
+
 
   dx = 1.0 / width
   dy = 1.0 / height
@@ -119,7 +125,21 @@ program fifo_test
         call stderr("fifo_test: READ PIPE:"//linestr(1:min(count,81)))
      end do
 
-#ifndef TEST_GRAPHTERM
+     ! Traveling sine-wave animation
+     do j=1,height
+        do i=1,width
+           data_values(i,j) = sin((i+k)*dx*2*PI) * sin(j*dy*PI)
+        end do
+     end do
+
+     ! Mask small values
+     where(abs(data_values) < 0.5) data_values = 0.0
+
+#ifdef TEST_GRAPHTERM
+     ! Write image to output pipe
+     count = fifo_plot2d(pipe_num, data_values, colormap_code=1, opacity=0.9, &
+                         undef_value=0.0, undef_color=15, transp_color=15)
+#else
      if (i > 26) then
          if (mod(i,2) == 1) then 
              count = write_str_to_pipe(pipe_num, "channel:channel1", end_line=1)
@@ -128,21 +148,11 @@ program fifo_test
          end if
      end if
      write(labelstr, *) "k=", k
-#endif
-
-     ! Traveling sine-wave animation
-     do j=1,height
-        do i=1,width
-           data_values(i,j) = sin((i+k)*dx*2*PI) * sin(j*dy*PI)
-        end do
-     end do
-
-     ! Mask low values
-     where(abs(data_values) < 0.5) data_values = 0.0
-
-     ! Write image to output pipe
+     ! Write image to output pipe (with label)
      count = fifo_plot2d(pipe_num, data_values, label=trim(labelstr), colormap_code=1, opacity=0.9, &
                          undef_value=0.0, undef_color=15, transp_color=15)
+#endif
+
   end do
 
   status = c_close(read_fd)   ! Close input pipe

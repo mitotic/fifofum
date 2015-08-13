@@ -1,9 +1,11 @@
-/* fifo_c: FIFO amed pipe functions for streaming text and PNG graphics
+/* fifo_c: FIFO amed pipe functions for streaming text and graphics
 
  -DTEST_MAIN to run test main program
  -DTEST_GRAPHTERM for escaped terminal output
  -DTEST_STDOUT for piping output to stdout
  -DDEBUG_FIFO for debug trace output
+ -DFIFO_BLOCKING for blocking writes to named pipe
+ -DFIFO_NO_PNG for compiling without the PNG library (display raw uncompressed images)
 
   To test:
       cc -DTEST_MAIN  fifo_c.c -lpng
@@ -26,7 +28,6 @@
       python fifofum.py --multiplex=1 --input=testin.fifo testout.fifo  # Load http://localhost:8008 for multi-channel output
  */
 
-#include <png.h>
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -44,7 +45,7 @@
 /* Encoding values GLOBAL */
 int NO_ENC        =  0; /* none (raw bytes) */
 int B64_ENC       =  1; /* Base64 */
-int DATA_URL_ENC  =  2; /* Base64 with data URL prefix+new line suffix (for fifofum.py) */
+int DATA_URL_ENC  =  2; /* Base64 with image data URL prefix+new line suffix (for fifofum.py) */
 int B64_LINE_ENC  = -1; /* Base64, broken into 80 character lines */
 int GRAPHTERM_ENC = -2; /* Base64 with GraphTerm prefix and suffix */
 
@@ -124,10 +125,16 @@ int VIRIDIS_PLUS_CMAP[3*256] = {
 235,229, 26,  238,229, 27,  240,229, 28,  243,230, 30,  246,230, 31,  248,230, 33,  251,231, 35,  253,231, 37
 };
 
-#define DATA_URL_PREFIX "data:image/png;base64,"
+#ifdef FIFO_NO_PNG
+#define IMAGE_TYPE "x-raw"
+#else
+#define IMAGE_TYPE "png"
+#endif
+
+#define DATA_URL_PREFIX_FMT "data:image/%s;base64,"
 #define DATA_URL_SUFFIX "\n"
 
-#define GRAPHTERM_PREFIX "\x1b[?1155;0h<!--gterm data display=block overwrite=yes-->image/png;base64,"
+#define GRAPHTERM_PREFIX_FMT "\x1b[?1155;0h<!--gterm data display=block overwrite=yes-->image/%s;base64,"
 #define GRAPHTERM_SUFFIX "\x1b[?1155l"
 
 #define FIFO_LINEMAX 80
@@ -138,7 +145,7 @@ struct pipe_buffer {
     int keep_open;
     int encoding;
 
-    unsigned char *stream_ptr;       /*  location to write PNG stream  */
+    unsigned char *stream_ptr;       /*  location to write image stream  */
     int stream_len;                  /*  number of bytes written       */
     int stream_maxlen;               /*  number of bytes written       */
 
@@ -164,7 +171,7 @@ void reset_pipe(int pipe_num)
     pipe_list[pipe_num].keep_open = 0;
     pipe_list[pipe_num].encoding = 0;
 
-    pipe_list[pipe_num].stream_ptr = (png_voidp) NULL;
+    pipe_list[pipe_num].stream_ptr = NULL;
     pipe_list[pipe_num].stream_len = 0;
     pipe_list[pipe_num].stream_maxlen = 0;
 
@@ -397,49 +404,27 @@ void write_encoded(int pipe_num, char *data, int length)
     return;
 }
 
-/* Specify data = NULL, length = 0 to force writing of incomplete triple octet */
-void write_file(png_structp png_ptr, png_bytep data, png_uint_32 length)
-{
-    pipe_buffer *bufr;
+int encode_image(int, char *, int, int, int, int *, int, int *, int);
 
-    bufr = (pipe_buffer *) png_get_io_ptr(png_ptr);
-
-    if (!bufr->encoding) {
-        if (length)
-          write_data(bufr, data, length);
-	return;
-    }
-
-    write_encoded(bufr->pipe_num, data, length);
-}
-
-void flush_file(png_structp png_ptr)
-{
-    pipe_buffer *bufr = (pipe_buffer *) png_get_io_ptr(png_ptr);
-    flush_pipe(bufr->pipe_num);
-}
-
-int encode_png(int, char *, int, int, int, int *, int, int *, int);
-
-/* Fortran-callable function that writes colormapped PNG image data to supplied character buffer,
+/* Fortran-callable function that writes colormapped image data to supplied character buffer,
 returning number of bytes written, or negative value in case of error.
 img is a char(height, width) array with 0-255 colormap index values.
 colors is a int(palette_size,3) array containing 0-255 RGB colormap triplets.
 alphas is a int(n_alphas) array containing 0-255 alpha values (0=>transparent, 255=>opaque)
 n_alphas must be <= 255, but is typically 0 or 1 for no or single transparent color.
 (See allocate_file_pipe for meaning of encoding parameter)
-If generated PNG data is more than out_bytes_max bytes, the negative of the required buffer size is returned as the error code.
+If generated image data is more than out_bytes_max bytes, the negative of the required buffer size is returned as the error code.
 A safe value for out_bytes_max would be 1500 + width*height. (Multiply by 1.33, if Base64 encoded)
 */
 
-int render_png(char *img, int width, int height, char *outbuf, int out_bytes_max, int encoding,
-	       int reverse, int *colors, int palette_size, int *alphas, int n_alphas)
+int render_image(char *img, int width, int height, char *outbuf, int out_bytes_max, int encoding,
+  	         int reverse, int *colors, int palette_size, int *alphas, int n_alphas)
 {
     int status = -1;
     int pipe_num;
 
 #ifdef DEBUG_FIFO
-    fprintf(stderr, "FIFO:render_png: out_bytes_max, encoding, pointer outbuf: %d, %d, %ld\n", out_bytes_max, encoding, (unsigned long)outbuf);
+    fprintf(stderr, "FIFO:render_image: out_bytes_max, encoding, pointer outbuf: %d, %d, %ld\n", out_bytes_max, encoding, (unsigned long)outbuf);
 #endif
 
     pipe_num = get_available_pipe();
@@ -447,18 +432,18 @@ int render_png(char *img, int width, int height, char *outbuf, int out_bytes_max
     if (pipe_num < 0)
         return pipe_num;
 
-    /* Initialize info for writing PNG stream to output buffer */
+    /* Initialize info for writing image stream to output buffer */
     pipe_list[pipe_num].encoding = encoding;
-    pipe_list[pipe_num].stream_ptr = (png_voidp) outbuf;
+    pipe_list[pipe_num].stream_ptr = (unsigned char *)outbuf;
     pipe_list[pipe_num].stream_maxlen = out_bytes_max;
 
-    status = encode_png(pipe_num, img, width, height, reverse, colors, palette_size, alphas, n_alphas);
+    status = encode_image(pipe_num, img, width, height, reverse, colors, palette_size, alphas, n_alphas);
 
     free_pipe(pipe_num);
     pipe_num = -1;
 
 #ifdef DEBUG_FIFO
-    fprintf(stderr, "FIFO:render_png: return status = %d\n", status);
+    fprintf(stderr, "FIFO:render_image: return status = %d\n", status);
 #endif
 
     return status;
@@ -512,7 +497,11 @@ int open_write_fd(const char *path, int named_pipe)
             return -1;
         }
 
+#ifdef FIFO_BLOCKING
+        write_fd = open(path, O_WRONLY);
+#else
         write_fd = open(path, O_WRONLY | O_NONBLOCK);
+#endif
         close(read_fd);
 
         if (write_fd < 0) {
@@ -527,7 +516,7 @@ int open_write_fd(const char *path, int named_pipe)
     return write_fd;
 }
 
-/* Fortran-callable function that initializes writing of colormapped PNG image data to open file descriptor.
+/* Fortran-callable function that initializes writing of colormapped image data to open file descriptor.
 Returns pipe number (>= 0) on success or negative value on error
 (See allocate_file_pipe for meaning of encoding parameter)
 */
@@ -541,7 +530,7 @@ int allocate_pipe(int write_fd, int encoding, int keep_open)
     if (pipe_num < 0)
         return pipe_num;
 
-    /* Initialize info for writing PNG stream to output buffer */
+    /* Initialize info for writing image stream to output buffer */
     pipe_list[pipe_num].write_fd = write_fd;
     pipe_list[pipe_num].keep_open = keep_open;
     pipe_list[pipe_num].encoding = encoding;
@@ -586,7 +575,33 @@ int allocate_file_pipe(const char *path, int encoding, int named_pipe)
     return pipe_num;
 }
 
-/* Fortran-callable function that writes colormapped PNG image data to initialized file/pipe/character buffer.
+#ifndef FIFO_NO_PNG
+#include <png.h>
+
+/* Specify data = NULL, length = 0 to force writing of incomplete triple octet */
+void write_file(png_structp png_ptr, png_bytep data, png_uint_32 length)
+{
+    pipe_buffer *bufr;
+
+    bufr = (pipe_buffer *) png_get_io_ptr(png_ptr);
+
+    if (!bufr->encoding) {
+        if (length)
+          write_data(bufr, (char *) data, length);
+	return;
+    }
+
+    write_encoded(bufr->pipe_num, (char *) data, length);
+}
+
+void flush_file(png_structp png_ptr)
+{
+    pipe_buffer *bufr = (pipe_buffer *) png_get_io_ptr(png_ptr);
+    flush_pipe(bufr->pipe_num);
+}
+#endif
+
+/* Fortran-callable function that writes colormapped image data to initialized file/pipe/character buffer.
 img is a char(height, width) array with 0-255 colormap index values.
 colors is a int(palette_size,3) array containing 0-255 RGB colormap triplets.
 alphas is a int(n_alphas) array containing 0-255 alpha values (0=>transparent, 255=>opaque)
@@ -594,32 +609,69 @@ n_alphas must be <= 255, but is typically 0 or 1 for no or single transparent co
 Return number of characters converted on success, or negative value on error.
 */
 
-int encode_png(int pipe_num, char *img, int width, int height, int reverse, int *colors, int palette_size,
-	       int *alphas, int n_alphas)
+int encode_image(int pipe_num, char *img, int width, int height, int reverse, int *colors, int palette_size,
+	         int *alphas, int n_alphas)
 {
-    png_structp png_ptr = NULL;
-    png_infop info_ptr = NULL;
-    png_bytep row = NULL;
-    png_bytep trans_color = NULL;
-    int p, x, y;
-    int count;
+    char width_height[4];
+    char rgba[4*256];
+    int p, x, y, offset3, offset4;
+
+    int count = -1;
+    int pixel_size = 1;
+    int depth = 8;
 
     if (!check_pipe_num(pipe_num))
       return -1;
 
-    int pixel_size = 1;
-    int depth = 8;
+    for (p = 0; p < palette_size; p++) {
+        offset3 = reverse ? 3*(palette_size-1-p) : 3*p;
+	offset4 = 4*p;
+	rgba[0+offset4] = colors[0+offset3];
+	rgba[1+offset4] = colors[1+offset3];
+	rgba[2+offset4] = colors[2+offset3];
+	rgba[3+offset4] = (p < n_alphas) ? alphas[p] : 255;
+    }
+    for (p = palette_size; p < 256; p++) {
+        offset4 = 4*p;
+	rgba[0+offset4] = 0;
+	rgba[1+offset4] = 0;
+	rgba[2+offset4] = 0;
+	rgba[3+offset4] = 0;
+    }
 
-    if (pipe_list[pipe_num].encoding == DATA_URL_ENC)
-        write_to_pipe_formatted(pipe_num, DATA_URL_PREFIX);
-    if (pipe_list[pipe_num].encoding == GRAPHTERM_ENC)
-        write_to_pipe_formatted(pipe_num, GRAPHTERM_PREFIX);
-    
 #ifdef DEBUG_FIFO
-    fprintf(stderr, "FIFO:encode_png: pointers for img, colors, outbuf: %ld, %ld\n", (unsigned long) img, (unsigned long) colors);
-    fprintf(stderr, "FIFO:encode_png: values for width, height, reverse, palette_size, n_alphas: %d, %d, %d, %d, %d\n", width, height, reverse, palette_size, n_alphas);
+    fprintf(stderr, "FIFO:encode_image: pointers for img, colors, outbuf: %ld, %ld\n", (unsigned long) img, (unsigned long) colors);
+    fprintf(stderr, "FIFO:encode_image: values for width, height, reverse, palette_size, n_alphas: %d, %d, %d, %d, %d\n", width, height, reverse, palette_size, n_alphas);
+    fprintf(stderr, "FIFO:encode_image: R,G,B,A,img_0,img_n-1: (%d, %d, %d, %d) %d %d\n", rgba[0],rgba[1],rgba[2],rgba[3],img[0],img[width*height-1]);
 #endif
 
+    if (pipe_list[pipe_num].encoding == DATA_URL_ENC && strcmp(IMAGE_TYPE, "x-raw") == 0) {
+	width_height[0] = width % 256;
+	width_height[1] = width / 256;
+	width_height[2] = height % 256;
+	width_height[3] = height / 256;
+
+        write_to_pipe_formatted(pipe_num, DATA_URL_PREFIX_FMT, IMAGE_TYPE);
+	write_encoded(pipe_num, width_height, 4);
+	write_encoded(pipe_num, rgba, 4*256);
+	write_encoded(pipe_num, img, width*height);
+	write_encoded(pipe_num, "", 0);
+        write_to_pipe_formatted(pipe_num, "\n");
+	flush_pipe(pipe_num);
+        return 0;
+    }
+
+#ifndef FIFO_NO_PNG
+    png_structp png_ptr = NULL;
+    png_infop info_ptr = NULL;
+    png_bytep row = NULL;
+    png_bytep trans_color = NULL;
+
+    if (pipe_list[pipe_num].encoding == DATA_URL_ENC)
+      write_to_pipe_formatted(pipe_num, DATA_URL_PREFIX_FMT, IMAGE_TYPE);
+    if (pipe_list[pipe_num].encoding == GRAPHTERM_ENC)
+        write_to_pipe_formatted(pipe_num, GRAPHTERM_PREFIX_FMT, IMAGE_TYPE);
+    
     /* File info */
     png_ptr = png_create_write_struct (PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     if (png_ptr == NULL) {
@@ -652,21 +704,21 @@ int encode_png(int pipe_num, char *img, int width, int height, int reverse, int 
 
 
     for (p = 0; p < palette_size; p++) {
-        int offset = reverse ? 3*(palette_size-1-p) : 3*p;
-        png_color* pcol = &palette[p];
-        pcol->red   = colors[0+offset];
-        pcol->green = colors[1+offset];
-        pcol->blue  = colors[2+offset];
-	/* fprintf(stderr, "COL=%d, off=%d: RGB (%d, %d, %d)\n", p, offset, pcol->red, pcol->green, pcol->blue); */
+        offset4 = 4*p;
+	png_color* pcol = &palette[p];
+        pcol->red   = rgba[0+offset4];
+        pcol->green = rgba[1+offset4];
+        pcol->blue  = rgba[2+offset4];
+	/* fprintf(stderr, "COL=%d, offset4=%d: RGB (%d, %d, %d)\n", p, offset4, pcol->red, pcol->green, pcol->blue); */
     }
 
     png_set_PLTE(png_ptr, info_ptr, palette, palette_size);
 
-    if (alphas != NULL && n_alphas > 0) {
+    if (alphas != NULL && n_alphas > 0 && n_alphas <= 256) {
         /* Set up transparency block, starting from color index 0 */
         trans_color = (png_bytep) png_malloc(png_ptr, n_alphas * sizeof(png_byte));
 	for (p = 0; p < n_alphas; p++) {
-	  trans_color[p] = alphas[p];
+	  trans_color[p] = rgba[3+4*p];
 	  /* fprintf(stderr, "ALPHA p=%d, alpha=%d\n", p, trans_color[p]); */ 
 	}
 	png_set_tRNS(png_ptr, info_ptr, (png_voidp) trans_color, n_alphas, NULL);
@@ -715,6 +767,8 @@ int encode_png(int pipe_num, char *img, int width, int height, int reverse, int 
  png_create_info_struct_failed:
     png_destroy_write_struct (&png_ptr, &info_ptr);
  png_create_write_struct_failed:
+ /* End of FIFO_NO_PNG */
+#endif
     return count;
 }
 
@@ -812,11 +866,12 @@ int main ()
     max_bytes = img_width * img_height + min_bytes;
     max_bytes = 1 + (4*max_bytes)/3;   /* For Base64 encoding */
 
+#ifndef FIFO_NO_PNG
     out_bytes = calloc(1, max_bytes);
 
     /* Create image */
-    count = render_png(img_pixels, img_width, img_height, out_bytes, max_bytes, NO_ENC,
-		       reverse, img_colors, ncolors, NULL, 0);
+    count = render_image(img_pixels, img_width, img_height, out_bytes, max_bytes, NO_ENC,
+		         reverse, img_colors, ncolors, NULL, 0);
     if (count <= 0) {
         fprintf(stderr, "fifo_c: Error in creating PNG output file: %d\n", count);
         return -1;
@@ -824,7 +879,7 @@ int main ()
 
     img_fd = open(imgfile, O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR);
     if (img_fd < 0) {
-      fprintf(stderr, "fifo_c: Error: Failed to open PNG output file %s\n", imgfile);
+      fprintf(stderr, "fifo_c: Error: Failed to open image output file %s\n", imgfile);
       return -1;
     }
     write(img_fd, out_bytes, count);
@@ -838,18 +893,21 @@ int main ()
     if (b64_fd >= 0) {
         pipe_num = allocate_pipe(b64_fd, 1, 0);
 	if (pipe_num >= 0) {
-  	    count = encode_png(pipe_num, img_pixels, img_width, img_height, reverse, img_colors, ncolors, NULL, 0);
+  	    count = encode_image(pipe_num, img_pixels, img_width, img_height, reverse, img_colors, ncolors, NULL, 0);
 	    fprintf(stderr, "fifo_c: Base64 PNG output file %s created (%d)\n", b64file, count);
 	    free_pipe(pipe_num);
   	    pipe_num = -1;
 	}
     }
+    /* End of FIFO_NO_PNG */
+#endif
 
 #ifdef TEST_GRAPHTERM
     pipe_num = allocate_file_pipe(pipefile, GRAPHTERM_ENC, 1);
 #else
-    pipe_num = allocate_file_pipe(pipefile, DATA_URL_ENC, 1);
+    pipe_num = allocate_file_pipe(pipefile);
 #endif
+
     if (pipe_num >= 0) {
         read_fd = open_read_fd(readfile);
 	if (read_fd < 0)
@@ -868,7 +926,7 @@ int main ()
 	      write_to_pipe_formatted(pipe_num, "channel:channel%d\n", 1 + x1 % 2);
 	    write_to_pipe_formatted(pipe_num, "x=%d\n", x1);
 #endif
-	    encode_png(pipe_num, img_pixels, img_width, img_height, reverse, img_colors, ncolors, NULL, 0);
+	    encode_image(pipe_num, img_pixels, img_width, img_height, reverse, img_colors, ncolors, NULL, 0);
 	    assert(img_height >= 10);
 	    x1 = (x1 + 1) % img_width;           /* Animate moving pixels */
 	    for (y1=(img_height/2)-2; y1<=(img_height/2)+2; y1++) {

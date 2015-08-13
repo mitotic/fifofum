@@ -16,7 +16,7 @@ Also, interactive graphical displays typically require "event loops" which can u
 2-dimensional data matrix as a pixel image, optionally overlaid on another
 background image. It transmits output using Unix named pipes (which are also known as FIFOs, because data is transmitted in a
 First In, First Out fashion).  Linking to the `fifofum` library enables running programs to continuously
-write text and PNG image data to named pipes, which appear like files.
+write text and image data to named pipes, which appear like files.
 A different program reads from these named files and continuously displays the output, as needed.
 (If no program is reading from the named pipe, the output is conveniently discarded.)
 
@@ -93,14 +93,17 @@ For more information, see:
 
 ## Dependencies
 
-
 The dependencies are minimal:
 
- * the `libpng` library to create PNG output data
+ * Python Tornado module for the web server. This is usually included
+   in scientific python distributions. If necessary, use the 
+   `pip install tornado` command to install it.
 
- * the Python Tornado module for the web server.
-
-Library `libpng` is standard on most Unix systems. If necessary, use the `pip install tornado` command to install Tornado.
+ * `libpng` library to create PNG output data. This is usually
+   installed on Unix systems. It is not strictly required, but
+   strongly recommended for image data compression.
+   (If `libpng` is not available, use the `-DFIFO_NO_PNG`
+   compile option to display uncompressed raw images.)
 
 
 ## Implementation notes

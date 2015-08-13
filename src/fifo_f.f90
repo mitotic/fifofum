@@ -16,7 +16,7 @@ module fifo_f
   ! Encoding values
   integer, parameter :: NO_ENC        =  0 ! none (raw bytes)
   integer, parameter :: B64_ENC       =  1 ! Base64
-  integer, parameter :: DATA_URL_ENC  =  2 ! Base64 with data URL prefix+new line suffix (for fifoserver.py)
+  integer, parameter :: DATA_URL_ENC  =  2 ! Base64 with data URL prefix+new line suffix (for fifofum.py)
   integer, parameter :: B64_LINE_ENC  = -1 ! Base64, broken into 80 character lines
   integer, parameter :: GRAPHTERM_ENC = -2 ! Base64 with GraphTerm prefix and suffix
   ! (Note: Using C binding to access these from fifo_c generates byte alignment warning messages; hence defined here again)
@@ -25,7 +25,7 @@ module fifo_f
 
       ! Wrappers for most, but not all, exposed fifo_c.c functions (see also auxiliary functions below for the rest)
      
-      ! Function that initializes writing of colormapped PNG image data to open file descriptor.
+      ! Function that initializes writing of colormapped image data to open file descriptor.
       ! Returns pipe number (>= 0) on success or negative value on error
       ! (See allocate_file_pipe for meaning of encoding parameter)
       ! C prototype:
@@ -129,38 +129,38 @@ module fifo_f
 
       ! FOR INTERNAL USE ONLY (by auxiliary functions)
 
-      ! Write colormapped PNG image data to supplied character buffer,
+      ! Write colormapped image data to supplied character buffer,
       ! returning number of bytes written, or negative value in case of error.
       ! img is a char(height, width) array with 0-255 colormap index values.
       ! colors is a int(palette_size,3) array containing 0-255 RGB colormap triplets.
       ! (See allocate_file_pipe for meaning of encoding parameter)
-      ! If generated PNG data is more than out_bytes_max bytes, the negative of the required buffer size is returned as the error code.
+      ! If generated image data is more than out_bytes_max bytes, the negative of the required buffer size is returned as the error code.
       ! A safe value for out_bytes_max would be 1500 + width*height. (Multiply by 1.33, if Base64 encoded)
       ! C prototype:
-      !   int render_png(char *img, int width, int height, char *outbuf, int out_bytes_max, int encoding, int reverse, int *colors, int palette_size);
+      !   int render_image(char *img, int width, int height, char *outbuf, int out_bytes_max, int encoding, int reverse, int *colors, int palette_size);
 
-      function tem_render_png(img, width, height, outbuf, out_bytes_max, encoding, &
-                              reverse, colors, palette_size, alphas, n_alphas) bind(c, name="render_png")
+      function tem_render_image(img, width, height, outbuf, out_bytes_max, encoding, &
+                                reverse, colors, palette_size, alphas, n_alphas) bind(c, name="render_image")
           use iso_c_binding
           implicit none
-          integer(c_int) tem_render_png
+          integer(c_int) tem_render_image
           character(kind=c_char), intent(in) :: img(*)
           character(kind=c_char), intent(out) :: outbuf(*)
           integer(c_int), value, intent(in) :: width, height, out_bytes_max, encoding
           integer(c_int), value, intent(in) :: reverse, palette_size, n_alphas
           integer(c_int), intent(in) :: colors(*), alphas(*)
-      end function tem_render_png
+      end function tem_render_image
 
 
-      function tem_encode_png(pipe_num, img, width, height, &
-                              reverse, colors, palette_size, alphas, n_alphas) bind(c, name="encode_png")
+      function tem_encode_image(pipe_num, img, width, height, &
+                                reverse, colors, palette_size, alphas, n_alphas) bind(c, name="encode_image")
           use iso_c_binding
           implicit none
-          integer(c_int) tem_encode_png
+          integer(c_int) tem_encode_image
           character(kind=c_char), intent(in) :: img(*)
           integer(c_int), value, intent(in) :: pipe_num, width, height, reverse, palette_size, n_alphas
           integer(c_int), intent(in) :: colors(*), alphas(*)
-      end function tem_encode_png
+      end function tem_encode_image
 
       
       function tem_allocate_file_pipe(path, encoding, named_pipe) bind(c, name="allocate_file_pipe")
@@ -184,21 +184,21 @@ contains
 
   ! AUXILIARY FUNCTIONS (to handle null-terminated string arguments, optional arguments etc
 
-  ! Write colormapped PNG image data to supplied character buffer,
+  ! Write colormapped image data to supplied character buffer,
   ! returning number of bytes written, or negative value in case of error.
   ! img is a char(height, width) array with 0-255 colormap index values.
   ! (See allocate_file_pipe for meaning of encoding parameter, which defaults to NO_ENC)
   ! colors is a int(palette_size,3) array containing 0-255 RGB colormap triplets.
   ! If colors is omitted, a Viridis color map is used by default.
-  ! If generated PNG data is more than out_bytes_max bytes, the negative of the required buffer size is returned as the error code.
+  ! If generated image data is more than out_bytes_max bytes, the negative of the required buffer size is returned as the error code.
   ! A safe value for out_bytes_max would be 1500 + width*height. (Multiply by 1.33, if Base64 encoded)
   ! C prototype:
-  !   int render_png(char *img, int width, int height, char *outbuf, int out_bytes_max, int encoding, int reverse, int *colors, int palette_size);
+  !   int render_image(char *img, int width, int height, char *outbuf, int out_bytes_max, int encoding, int reverse, int *colors, int palette_size);
 
-  function render_png(img, outbuf, encoding, reverse, colors, alphas)
+  function render_image(img, outbuf, encoding, reverse, colors, alphas)
       use iso_c_binding
       implicit none
-      integer(c_int) render_png
+      integer(c_int) render_image
       character(kind=c_char), intent(in) :: img(1:,1:)
       character(kind=c_char), intent(out) :: outbuf(1:)
       integer(c_int), OPTIONAL, intent(in) :: colors(1:,1:), alphas(1:)
@@ -210,31 +210,31 @@ contains
       if (present(reverse)) tem_reverse = reverse
 
       if (present(colors)) then
-         if (size(colors,1) /= 3) call stderr("render_png: ERROR colors must be a 3xn array", exit=1)
+         if (size(colors,1) /= 3) call stderr("render_image: ERROR colors must be a 3xn array", exit=1)
 
-         render_png = tem_render_png(img, size(img,1), size(img,2), outbuf, size(outbuf), tem_encoding, &
-                                     tem_reverse, colors, size(colors,2), dummy, 0)
+         render_image = tem_render_image(img, size(img,1), size(img,2), outbuf, size(outbuf), tem_encoding, &
+                                         tem_reverse, colors, size(colors,2), dummy, 0)
       else
-         render_png = tem_render_png(img, size(img,1), size(img,2), outbuf, size(outbuf), tem_encoding, &
-                                     tem_reverse, VIRIDIS_CMAP, size(VIRIDIS_CMAP,2), dummy, 0)
+         render_image = tem_render_image(img, size(img,1), size(img,2), outbuf, size(outbuf), tem_encoding, &
+                                         tem_reverse, VIRIDIS_CMAP, size(VIRIDIS_CMAP,2), dummy, 0)
       end if
-  end function render_png
+  end function render_image
 
 
-  ! Writes colormapped PNG image data to initialized file/pipe/character buffer.
+  ! Writes colormapped image data to initialized file/pipe/character buffer.
   ! img is a char(width, height) array with 0-255 colormap index values.
   ! colors is a integer(3,palette_size) array containing 0-255 RGB colormap triplets.
   ! If colors is omitted, a Viridis color map is used by default.
   ! reverse=1 reverses the color map.
   ! Return number of characters converted on success, or negative value on error.
   ! C prototype:
-  !   int encode_png(int pipe_num, char *img, int width, int height,
+  !   int encode_image(int pipe_num, char *img, int width, int height,
   !                  int reverse, int *colors, int palette_size, int *alphas, int n_alphas);
 
-  function encode_png(pipe_num, img, reverse, colors, alphas)
+  function encode_image(pipe_num, img, reverse, colors, alphas)
       use iso_c_binding
       implicit none
-      integer(c_int) encode_png
+      integer(c_int) encode_image
       integer(c_int), intent(in) :: pipe_num
       character(kind=c_char), intent(in) :: img(1:,1:)
       integer(c_int), OPTIONAL, intent(in) :: reverse
@@ -245,20 +245,20 @@ contains
       if (present(reverse)) tem_reverse = reverse
 
       if (present(colors)) then
-          if (size(colors,1) /= 3) call stderr("encode_png: ERROR colors must be a 3xn array", exit=1)
+          if (size(colors,1) /= 3) call stderr("encode_image: ERROR colors must be a 3xn array", exit=1)
 
           if (present(alphas)) then
-              encode_png = tem_encode_png(pipe_num, img, size(img,1), size(img,2), &
-                                          tem_reverse, colors, size(colors,2), alphas, size(alphas))
+              encode_image = tem_encode_image(pipe_num, img, size(img,1), size(img,2), &
+                                              tem_reverse, colors, size(colors,2), alphas, size(alphas))
           else
-              encode_png = tem_encode_png(pipe_num, img, size(img,1), size(img,2), &
-                                          tem_reverse, colors, size(colors,2), dummy, 0)
+              encode_image = tem_encode_image(pipe_num, img, size(img,1), size(img,2), &
+                                              tem_reverse, colors, size(colors,2), dummy, 0)
           endif
       else
-          encode_png = tem_encode_png(pipe_num, img, size(img,1), size(img,2), &
-                                      tem_reverse, VIRIDIS_CMAP, size(VIRIDIS_CMAP,2), dummy, 0)
+          encode_image = tem_encode_image(pipe_num, img, size(img,1), size(img,2), &
+                                          tem_reverse, VIRIDIS_CMAP, size(VIRIDIS_CMAP,2), dummy, 0)
       endif
-  end function encode_png
+  end function encode_image
 
   
   ! Open a file/named-pipe(FIFO),
@@ -266,7 +266,7 @@ contains
   ! A path value of "-" uses standard output. (DEFAULT)
   ! encoding may be: NO_ENC        (0)  for none (raw bytes)
   !                  B64_ENC       (1)  for Base64
-  !                  DATA_URL_ENC  (2)  for Base64 with data URL prefix+new line suffix DEFAULT (for fifoserver.py)
+  !                  DATA_URL_ENC  (2)  for Base64 with data URL prefix+new line suffix DEFAULT (for fifofum.py)
   !                  B64_LINE_ENC  (-1) for Base64, broken into 80 character lines
   !                  GRAPHTERM_ENC (-2) for Base64 with GraphTerm prefix and suffix
   ! If named_pipe, a FIFO file is opened (if needed) and kept open even after data is output. (=1 by DEFAULT)
@@ -348,7 +348,7 @@ contains
   ! If transp_color >= 0, that particular color index is made transparent (ignored for grayalpha colormap).
   ! Set transp_color to -1, if not used.
   ! undef_color/transp_color can be a basic color (0-15), or a color in the colormap (16-255).
-  ! colors is an optional colormap array (as in encode_png)
+  ! colors is an optional colormap array (as in encode_image)
   ! Basic colors 0-7:   Black,  White,     Red,  Lime Green,  Blue,  Cyan,  Magenta,  Yellow
   ! basic colors 8-15: Silver,   Gray,  Maroon,  Dark Green,  Navy,  Teal,   Purple,   Olive
   function fifo_plot2d(pipe_num, field, label, colormap_code, opacity, undef_value, undef_color, transp_color, colors)
@@ -450,9 +450,9 @@ contains
           ! User-defined colormap
           if (size(colors,1) /= 3) call stderr("fifo_plot2d: ERROR colors must be a 3x256 array", exit=1)
           if (size(colors,2) /= MAX_COLORS) call stderr("fifo_plot2d: ERROR colors must be a 3x256 array", exit=1)
-          status = encode_png(pipe_num, field_pixels, reverse, colors, alphas(1:n_alphas) )
+          status = encode_image(pipe_num, field_pixels, reverse, colors, alphas(1:n_alphas) )
       else
-          status = encode_png(pipe_num, field_pixels, reverse, colormap, alphas(1:n_alphas))
+          status = encode_image(pipe_num, field_pixels, reverse, colormap, alphas(1:n_alphas))
       end if
 
       fifo_plot2d = status
