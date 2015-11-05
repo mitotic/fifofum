@@ -56,23 +56,26 @@ water dry dynamical core.
    when compiling. In the linking options, add the following:
 
 ```sh
-    LDFLAGS = ... fifo_f.o fifo_c.o -lpng
+  LDFLAGS = ... fifo_f.o fifo_c.o -lpng
 ```
 	
 - Login to remote computer using port forwarding:
 
 ```sh
-    ssh -L 8008:localhost:8008 user@remote
+  ssh -L 8008:localhost:8008 user@remote
 ```
 
 - Run dynamical core in the background and start web server (or use two
-  terminal windows)
+  terminal windows, one for each command). The Fortran program creates
+  a file-like FIFO object named `fms_pipe.fifo` in the run
+  directory. The Python web server reads from this "file" and streams the
+  output images, overlaid on a background image.
 
 ```sh
-    mpirun -np 1 ./fms.x &
+  mpirun -np 1 ./fms.x &
 
-    # Use NASA Blue Marble image as background
-    python fifofum.py --background=http://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74092/world.200407.3x5400x2700.jpg fms_pipe.fifo
+  # Use NASA Blue Marble image as background
+  python fifofum.py --background=http://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74092/world.200407.3x5400x2700.jpg fms_pipe.fifo
 ```
 
 - Open URL <http://localhost:8008> in local web server
