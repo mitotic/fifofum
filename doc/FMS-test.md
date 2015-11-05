@@ -82,4 +82,4 @@ water dry dynamical core.
 The following image shows animation of surface pressure during the
 test run of the shallow water model.
 
-![shallow water](https://github.com/mitotic/fiforum/raw/master/doc/images/fms_live.gif)
+![shallow water](https://raw.githubusercontent.com/mitotic/fifofum/master/doc/images/fms_live.gif)
