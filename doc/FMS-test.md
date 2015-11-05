@@ -65,8 +65,8 @@ water dry dynamical core.
     ssh -L 8008:localhost:8008 user@remote
 ```
 
-- Run dynamical core in background and start web server (or use two
-  terminal windows
+- Run dynamical core in the background and start web server (or use two
+  terminal windows)
 
 ```sh
     mpirun -np 1 ./fms.x &
