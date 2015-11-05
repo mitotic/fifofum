@@ -16,8 +16,8 @@ Different pipes are treated as different channels, named using the basename of t
 Each channel is displayed separately.
 
 For multiplexed pipes, a directive line of the form "channel: name\n" is used to switch channels within a pipe.
-(The multiplex option is useful even for a single channel, if multiple blocks of lines always need to be displayed together,
-because lines are skipped until the channel directive is encountered.)
+(The multiplex option may be useful even for a single channel, if blocks of output lines always need to be
+processed together, because lines are skipped initially until the channel directive is encountered.)
 
 --passthru option "pipes" non-image output data to standard output (for logging)
 

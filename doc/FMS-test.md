@@ -79,7 +79,7 @@ water dry dynamical core.
 
 ## Sample live output from FMS
 
-The following image shows animation of surface pressure during the
+The following image shows animation of surface pressure during a
 test run of the shallow water model.
 
 ![shallow water](https://raw.githubusercontent.com/mitotic/fifofum/master/doc/images/fms_live.gif)

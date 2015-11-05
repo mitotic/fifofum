@@ -1,7 +1,9 @@
 # fifofum: A lightweight graphics library for displaying 2-d output from running Fortran programs using FIFO pipes
 
-Typically, the output from a computer program like a weather or climate model is saved to files and visualized after the program completes
-a stage of execution. When developing and debugging such a computer program, it would be useful to have a "real time" display of the graphical output
+Typically, the output from a computer program like a weather or
+climate model is saved to files and visualized after the program completes
+a stage of execution. When developing and debugging such a computer program,
+it would be useful to have a "real time" display of the graphical output
 to track the evolution of numerical instabilities etc. An interactive
 graphics display would also be useful for pedagogical purposes.
 
@@ -10,15 +12,19 @@ running program and use X windows to display images. Unfortunately
 the few Fortran-callable graphics libraries tend to be
 complex. These libraries often introduce  many additional
 dependencies, making the program less portable and difficult to install.
-Also, interactive graphical displays typically require "event loops" which can unnecessarily complicate program logic.
+Also, interactive graphical displays typically require "event loops"
+which can unnecessarily complicate program logic.
 
 `fifofum` is a very simple graphics library that displays a
 2-dimensional data matrix as a pixel image, optionally overlaid on another
-background image. It transmits output using Unix named pipes (which are also known as FIFOs, because data is transmitted in a
-First In, First Out fashion).  Linking to the `fifofum` library enables running programs to continuously
+background image. It transmits output using Unix named pipes (which
+are also known as FIFOs, because data is transmitted in a
+First In, First Out fashion). Linking to the `fifofum` library enables running programs to continuously
 write text and image data to named pipes, which appear like files.
 A different program reads from these named files and continuously displays the output, as needed.
-(If no program is reading from the named pipe, the output is conveniently discarded.)
+If no program is reading from the named pipe, the output is simply
+discarded. This means that you can take a peek at the output as and
+when needed.
 
 The basic FIFO pipe code is written in C (`fifo_c.c`), and a Fortran wrapper (`fifo_f.f90`) is provided. 
 The package also includes a Python web server (`fifofum.py`) that reads data streams from multiple named pipes
@@ -30,8 +36,8 @@ generates binary images (in PNG or other formats). The binary images
 captured from the other libarary can be dumped to a named pipe stream
 and then displayed in the browser.
 
-## Usage example
 
+## Usage example
 
 Sample Fortran code snippet (see `test/test_animate.F90`)
 
@@ -73,16 +79,15 @@ Try the command `make test_with_background` for a fancier animation.
 
 For more information, see:
 
- - Test program `test/test_animate.F90`
+ - Test program [test/test_animate.F90](test/test_animate.F90)
 
- - Comments at the top of `src/fifo_f.f90` and `src/fifofum.py`
+ - Comments at the top of [src/fifo_f.f90](src/fifo_f.f90) and [src/fifofum.py](src/fifofum.py)
 
- - Function `fifo_plot2d` in  ``src/fifo_f.f90``
+ - Function `fifo_plot2d` in [src/fifo_f.f90](src/fifo_f.f90)
 
  - `python fifofum.py --help`
 
-- `test/Makefile`
-
+ - `test/Makefile`
 
 
 *Notes:*
@@ -114,3 +119,25 @@ By default, line-oriented I/O is used for writing to and reading from named pipe
 Images are written to the named pipe using the Data URL format (`data:image/png;base64,...`), terminated by a new line.
 
 
+## Additional info
+
+`fifofum` simply transforms each data value in a matrix to a single color pixel
+to create the image. Opacity and transparency for "undefined" values
+is supported. This allows the data image to be overlaid on a
+background image that contains coordinate or geographical information.
+Multiple pipes can be used to display multiple animations simultaneously.
+See the comments at the beginning of [src/fifofum.py](src/fifofum.py) and also the test program [test/test_animate.F90](test/test_animate.F90).
+
+
+## Sample live animation
+
+The following image shows animation of surface pressure during a
+test run of the shallow water atmospheric dynamical core from the
+[Flexible Modeling System](http://www.gfdl.noaa.gov/fms) developed by
+the NOAA Geophysical Fluid Dynamical Laboratory. The model output is
+overlaid on a NASA
+[Blue Marble](http://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74092/world.200407.3x5400x2700.jpg)
+background image. (For more details of
+this test run, see [doc/FMS-test.md](doc/FMS-test.md).)
+
+![shallow water](https://raw.githubusercontent.com/mitotic/fifofum/master/doc/images/fms_live.gif)
