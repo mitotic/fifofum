@@ -79,7 +79,9 @@ Try the command `make test_with_background` for a fancier animation.
 
 For more information, see:
 
- - Test program [test/test_animate.F90](test/test_animate.F90)
+ - Simple test program [test/test_animate.F90](test/test_animate.F90)
+
+ - Test with atmospheric model [doc/FMS-test.md](doc/FMS-test.md)
 
  - Comments at the top of [src/fifo_f.f90](src/fifo_f.f90) and [src/fifofum.py](src/fifofum.py)
 

@@ -1,4 +1,4 @@
-# Using fifofim with GFDL/FMS dynamical core
+# Using fifofum with GFDL/FMS dynamical core
 
 `fifofum` has been tested with the shallow water atmospheric dynamical core from the
 [Flexible Modeling System](http://www.gfdl.noaa.gov/fms) developed by
