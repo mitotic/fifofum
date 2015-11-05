@@ -1,6 +1,6 @@
 program test_animate
 
-  ! Program to test simple animation of wave propagation using the fifonum library
+  ! Program to test simple animation of wave propagation using the fifofum library
   !
   ! Usage:
   !  icc -c fifo_c.c

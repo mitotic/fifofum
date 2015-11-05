@@ -8,7 +8,7 @@ water dry dynamical core.
 
 - First, modify the main driver `src/atmos_bgrid/driver/shallow/atmosphere.f90`
 
- - Include the Fortran module
+- Include the Fortran module
 
 ```FORTRAN
     use fifo_f

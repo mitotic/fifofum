@@ -1,6 +1,6 @@
 program test_graphterm
 
-  ! Program to test simple animation of wave propagation using the fifonum library within GraphTerm
+  ! Program to test simple animation of wave propagation using the fifofum library within GraphTerm
   !
   ! Usage:
   !  icc -c fifo_c.c

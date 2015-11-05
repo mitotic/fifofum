@@ -39,7 +39,7 @@ and then displayed in the browser.
 
 ## Usage example
 
-Sample Fortran code snippet (see `test/test_animate.F90`)
+Sample Fortran code snippet (see [test/test_animate.F90](test/test_animate.F90))
 
 ```FORTRAN
     real :: data_values(width, height)
@@ -66,7 +66,7 @@ Run web server to display output and capture input.
 python fifofum.py --input=testin.fifo testout.fifo
 ```
 
-Open link `http://localhost:8008` using a web browser to view the animated image and send text input.
+Open link <http://localhost:8008> using a web browser to view the animated image and send text input.
 
 If you are running the data-generating program and the web server on a remote computer via `ssh`, use the following
 command to forward port `8008` for local browser access:
@@ -116,19 +116,27 @@ The dependencies are minimal:
 
 ## Implementation notes
 
-By default, line-oriented I/O is used for writing to and reading from named pipes.
-
-Images are written to the named pipe using the Data URL format (`data:image/png;base64,...`), terminated by a new line.
-
-
-## Additional info
-
 `fifofum` simply transforms each data value in a matrix to a single color pixel
-to create the image. Opacity and transparency for "undefined" values
+to create the image.
+
+Opacity and transparency for "undefined" values
 is supported. This allows the data image to be overlaid on a
 background image that contains coordinate or geographical information.
-Multiple pipes can be used to display multiple animations simultaneously.
-See the comments at the beginning of [src/fifofum.py](src/fifofum.py) and also the test program [test/test_animate.F90](test/test_animate.F90).
+
+By default, line-oriented I/O is used for writing to and reading from named pipes.
+
+Images are written to the named pipe using the Data URL format (`data:image/png;base64,...`),
+terminated by a new line.
+
+Multiple pipes can be used to display multiple animations
+simultaneously.
+
+An optional input pipe, allowing the model to read user input from the browser,
+is also supported.
+
+See the comments at the beginning of [src/fifofum.py](src/fifofum.py)
+and also the test program [test/test_animate.F90](test/test_animate.F90) for more info.
+
 
 
 ## Sample live animation
