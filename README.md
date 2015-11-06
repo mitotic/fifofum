@@ -29,12 +29,14 @@ when needed.
 The basic FIFO pipe code is written in C (`fifo_c.c`), and a Fortran wrapper (`fifo_f.f90`) is provided. 
 The package also includes a Python web server (`fifofum.py`) that reads data streams from multiple named pipes
 and displays the images and text in a browser window. The display is continually updated as new data arrives.
-(Other custom-written software can also be used to read and process the data from the named pipes.)
+Other custom software can also be used to read and process the data
+from the named pipes. Alternatively, the data could be saved to a
+file that is continually overwritten for each new image (see [test/test_file.F90](test/test_file.F90)).
 
 `fifofum` can also be used in conjunction with any other graphics library that
 generates binary images (in PNG or other formats). The binary images
 captured from the other libarary can be dumped to a named pipe stream
-and then displayed in the browser.
+and then displayed in the browser (see [test/test_other.F90](test/test_other.F90)).
 
 
 ## Usage example
@@ -103,15 +105,15 @@ For more information, see:
 
 The dependencies are minimal:
 
- * Python Tornado module for the web server. This is usually included
-   in scientific python distributions. If necessary, use the 
-   `pip install tornado` command to install it.
+ * Python Tornado module. Needed if the web server is to be used.
+   This is usually included in scientific python distributions.
+   If necessary, use the `pip install tornado` command to install it.
 
  * `libpng` library to create PNG output data. This is usually
    installed on Unix systems. It is not strictly required, but
    strongly recommended for image data compression.
-   (If `libpng` is not available, use the `-DFIFO_NO_PNG`
-   compile option to display uncompressed raw images.)
+   If `libpng` is not available, use the `-DFIFO_NO_PNG`
+   compile option to display uncompressed raw images.
 
 
 ## Implementation notes
@@ -136,7 +138,6 @@ is also supported.
 
 See the comments at the beginning of [src/fifofum.py](src/fifofum.py)
 and also the test program [test/test_animate.F90](test/test_animate.F90) for more info.
-
 
 
 ## Sample live animation
